@@ -90,6 +90,12 @@ jobs:
       - name: 写入真实应用名（支持中文）
         run: node scripts/apply-app-name.mjs
 
+      - name: 读取版本号
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: 编译 APK
         run: |
           if [ "${{ inputs.variant }}" = "release" ]; then
@@ -116,9 +122,25 @@ jobs:
         run: |
           echo "::warning::未配置 ANDROID_KEYSTORE_BASE64，产出的 release APK 未签名、无法安装。改用 debug 构建，或按文件顶部注释配置签名密钥。"
 
+      - name: 清理未签名的中间产物
+        run: |
+          for f in $(find src-tauri/gen/android/app/build/outputs/apk -name '*-unsigned.apk'); do
+            signed="${f%-unsigned.apk}.apk"
+            [ -f "$signed" ] && rm -f "$f"
+          done
+
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
           name: android-apk-${{ inputs.variant || 'debug' }}
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+
+      - name: 发布到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v${{ steps.version.outputs.value }}
+          name: Android v${{ steps.version.outputs.value }}
+          draft: false
+          files: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          token: ${{ secrets.GITHUB_TOKEN }}
